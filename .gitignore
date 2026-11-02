@@ -1,0 +1,31 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# Local machine config (contains absolute SDK path)
+local.properties
+
+# Build outputs
+*.apk
+*.aab
+*.apks
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 本地截图等
+/模拟器截图.png

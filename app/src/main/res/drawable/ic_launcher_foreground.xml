@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 脸部 -->
+    <path
+        android:fillColor="#FFD3B4"
+        android:pathData="M50,30 a20,20 0 1,1 0,40 a20,20 0 1,1 0,-40 z" />
+
+    <!-- 手术帽 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,46 A20,20 0 0 1 70,46 L30,46 Z" />
+
+    <!-- 帽子上的十字 -->
+    <path
+        android:fillColor="#0A84FF"
+        android:pathData="M48,32 h4 v4 h4 v4 h-4 v4 h-4 v-4 h-4 v-4 h4 z" />
+
+    <!-- 眼睛 -->
+    <path
+        android:fillColor="#2B2B2B"
+        android:pathData="M43,47.8 a2.2,2.2 0 1,1 0,4.4 a2.2,2.2 0 1,1 0,-4.4 z" />
+    <path
+        android:fillColor="#2B2B2B"
+        android:pathData="M57,47.8 a2.2,2.2 0 1,1 0,4.4 a2.2,2.2 0 1,1 0,-4.4 z" />
+
+    <!-- 口罩 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,54 h22 a3,3 0 0 1 3,3 v10 a3,3 0 0 1 -3,3 h-22 a3,3 0 0 1 -3,-3 v-10 a3,3 0 0 1 3,-3 z" />
+    <path
+        android:fillColor="#B0BEC5"
+        android:pathData="M36,59.2 h28 v1.6 h-28 z" />
+    <path
+        android:fillColor="#B0BEC5"
+        android:pathData="M36,64.2 h28 v1.6 h-28 z" />
+
+    <!-- 手术刀刀片 -->
+    <path
+        android:fillColor="#D8DCE3"
+        android:pathData="M72.2,36 L75.8,36 L75.8,54 L72.2,54 Z" />
+    <path
+        android:fillColor="#D8DCE3"
+        android:pathData="M72.2,36 L75.8,36 L74,28 Z" />
+
+    <!-- 手术刀刀柄 -->
+    <path
+        android:fillColor="#2A9D8F"
+        android:pathData="M72.6,54 L75.4,54 L75.4,68 L72.6,68 Z" />
+
+    <!-- 手 -->
+    <path
+        android:fillColor="#FFD3B4"
+        android:pathData="M74,54 a6,6 0 1,1 0,12 a6,6 0 1,1 0,-12 z" />
+</vector>
