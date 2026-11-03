@@ -406,20 +406,20 @@ class AppRepository(
         }
     }
 
-    suspend fun applyTemplate(treatmentId: Long, templateId: Long) {
+    /** 把模板里的药按（溶媒+水量+长期/临时+用法）分组，返回可进入待审核的草稿列表 */
+    suspend fun getTemplateDrafts(templateId: Long): List<MedicationGroupDraft> {
         val meds = templateMedicationDao.getByTemplateOnce(templateId)
-        meds.forEach { m ->
-            medicationDao.insert(
-                Medication(
-                    treatmentId = treatmentId,
-                    name = m.name,
-                    dose = m.dose,
-                    doseUnit = m.doseUnit,
-                    diluent = m.diluent,
-                    diluentVolume = m.diluentVolume
+        return meds.groupBy { "${it.diluent}|${it.diluentVolume}|${it.orderType}|${it.usage}" }
+            .values.map { group ->
+                val first = group.first()
+                MedicationGroupDraft(
+                    diluent = first.diluent,
+                    diluentVolume = first.diluentVolume,
+                    orderType = first.orderType,
+                    usage = first.usage,
+                    meds = group.map { OrderSetMedEntry(it.name, it.dose, it.doseUnit) }
                 )
-            )
-        }
+            }
     }
 
     // ===== 引流量 =====
@@ -582,7 +582,8 @@ class AppRepository(
         val id = if (setId == 0L) {
             orderSetDao.insertOrderSet(OrderSet(name = name))
         } else {
-            orderSetDao.updateOrderSet(OrderSet(id = setId, name = name))
+            val existing = orderSetDao.getById(setId)
+            orderSetDao.updateOrderSet(OrderSet(id = setId, name = name, createdAt = existing?.createdAt ?: System.currentTimeMillis()))
             setId
         }
         orderSetDao.deleteItemsBySet(id)

@@ -356,7 +356,11 @@ fun TreatmentSection(patientId: Long, showDrainage: Boolean = true) {
         TreatmentTemplatePickerDialog(
             onDismiss = { showTemplatePicker = false },
             onPick = { templateId ->
-                scope.launch { repository.applyTemplate(currentTreatment.id, templateId) }
+                scope.launch {
+                    repository.getTemplateDrafts(templateId).forEach { d ->
+                        pendingMeds.add(MedDraft(null, d.diluent, d.diluentVolume, d.orderType, d.usage, d.meds.map { MedEntry(it.name, it.dose, it.doseUnit) }))
+                    }
+                }
                 showTemplatePicker = false
             }
         )

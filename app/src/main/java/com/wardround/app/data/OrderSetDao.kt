@@ -12,6 +12,9 @@ interface OrderSetDao {
     @Query("SELECT * FROM order_sets ORDER BY createdAt DESC")
     fun getAll(): Flow<List<OrderSet>>
 
+    @Query("SELECT * FROM order_sets WHERE id = :id")
+    suspend fun getById(id: Long): OrderSet?
+
     @Query("SELECT * FROM order_set_items WHERE setId = :setId ORDER BY id ASC")
     fun getItems(setId: Long): Flow<List<OrderSetItem>>
 
