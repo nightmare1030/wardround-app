@@ -1,5 +1,6 @@
 package com.wardround.app.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,6 +56,7 @@ import com.wardround.app.data.InfusionGroup
 import com.wardround.app.data.Medication
 import com.wardround.app.data.Patient
 import com.wardround.app.data.Treatment
+import com.wardround.app.data.OrderSet
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -121,6 +123,7 @@ fun TreatmentSection(patientId: Long, showDrainage: Boolean = true) {
     var showEditTreatment by remember { mutableStateOf(false) }
     var showAddMedication by remember { mutableStateOf(false) }
     var showTemplatePicker by remember { mutableStateOf(false) }
+    var showOrderSetPicker by remember { mutableStateOf(false) }
     var pendingDeleteTreatment by remember { mutableStateOf<Treatment?>(null) }
     var pendingDeleteMedication by remember { mutableStateOf<Medication?>(null) }
     var pendingStopGroup by remember { mutableStateOf<InfusionGroup?>(null) }
@@ -228,12 +231,29 @@ fun TreatmentSection(patientId: Long, showDrainage: Boolean = true) {
                 item {
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("用药明细", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { showTemplatePicker = true }) { Text("调用模板") }
                         OutlinedButton(onClick = { showAddMedication = true }) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.width(18.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("添加用药")
                         }
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { showTemplatePicker = true }) { Text("调用模板") }
+                        TextButton(onClick = { showOrderSetPicker = true }) { Text("套用套餐") }
+                        TextButton(onClick = {
+                            scope.launch {
+                                val drafts = repository.getPreviousTreatmentDrafts(patientId)
+                                if (drafts.isEmpty()) {
+                                    Toast.makeText(context, "没有可复制的历史医嘱", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    drafts.forEach { d ->
+                                        pendingMeds.add(MedDraft(null, d.diluent, d.diluentVolume, d.orderType, d.usage, d.meds.map { MedEntry(it.name, it.dose, it.doseUnit) }))
+                                    }
+                                }
+                            }
+                        }) { Text("复制医嘱") }
                     }
                 }
 
@@ -338,6 +358,20 @@ fun TreatmentSection(patientId: Long, showDrainage: Boolean = true) {
             onPick = { templateId ->
                 scope.launch { repository.applyTemplate(currentTreatment.id, templateId) }
                 showTemplatePicker = false
+            }
+        )
+    }
+
+    if (showOrderSetPicker && currentTreatment != null) {
+        OrderSetPickerDialog(
+            onDismiss = { showOrderSetPicker = false },
+            onPick = { setId ->
+                scope.launch {
+                    repository.getOrderSetDrafts(setId).forEach { d ->
+                        pendingMeds.add(MedDraft(null, d.diluent, d.diluentVolume, d.orderType, d.usage, d.meds.map { MedEntry(it.name, it.dose, it.doseUnit) }))
+                    }
+                }
+                showOrderSetPicker = false
             }
         )
     }
@@ -553,6 +587,36 @@ private fun TreatmentTemplatePickerDialog(
                     templates.forEach { t ->
                         TextButton(onClick = { onPick(t.id) }, modifier = Modifier.fillMaxWidth()) {
                             Text(t.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+@Composable
+private fun OrderSetPickerDialog(
+    onDismiss: () -> Unit,
+    onPick: (Long) -> Unit
+) {
+    val context = LocalContext.current
+    val repository = remember { (context.applicationContext as WardRoundApp).repository }
+    val sets by repository.getOrderSets().collectAsState(initial = emptyList())
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择医嘱套餐") },
+        text = {
+            Column {
+                if (sets.isEmpty()) {
+                    Text("暂无套餐，请先在设置「医嘱套餐」中创建", color = Color.Gray)
+                } else {
+                    sets.forEach { s ->
+                        TextButton(onClick = { onPick(s.id) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(s.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

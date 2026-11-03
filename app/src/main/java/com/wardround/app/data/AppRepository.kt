@@ -18,7 +18,9 @@ class AppRepository(
     private val drainageDao: DrainageDao,
     private val treatmentTemplateDao: TreatmentTemplateDao,
     private val templateMedicationDao: TemplateMedicationDao,
-    private val infusionGroupDao: InfusionGroupDao
+    private val infusionGroupDao: InfusionGroupDao,
+    private val drugDao: DrugDao,
+    private val orderSetDao: OrderSetDao
 ) {
     // ===== 患者 =====
     fun getAllPatients(): Flow<List<Patient>> = patientDao.getAll()
@@ -560,4 +562,92 @@ class AppRepository(
         }
         return patients.size
     }
+    // ===== 常用药字典 =====
+    fun getDrugs(): Flow<List<Drug>> = drugDao.getAll()
+
+    suspend fun seedDrugsIfEmpty() {
+        if (drugDao.count() == 0) {
+            DrugSeed.list().forEach { drugDao.insert(it) }
+        }
+    }
+
+    suspend fun incrementDrugUse(id: Long) {
+        drugDao.incrementUse(id)
+    }
+
+    // ===== 医嘱套餐 =====
+    fun getOrderSets(): Flow<List<OrderSet>> = orderSetDao.getAll()
+
+    suspend fun saveOrderSet(setId: Long, name: String, items: List<MedicationGroupDraft>): Long {
+        val id = if (setId == 0L) {
+            orderSetDao.insertOrderSet(OrderSet(name = name))
+        } else {
+            orderSetDao.updateOrderSet(OrderSet(id = setId, name = name))
+            setId
+        }
+        orderSetDao.deleteItemsBySet(id)
+        items.forEach { g ->
+            orderSetDao.insertItem(
+                OrderSetItem(
+                    setId = id,
+                    diluent = g.diluent,
+                    diluentVolume = g.diluentVolume,
+                    orderType = g.orderType,
+                    usage = g.usage,
+                    medsJson = medsToJson(g.meds)
+                )
+            )
+        }
+        return id
+    }
+
+    suspend fun deleteOrderSet(set: OrderSet) {
+        orderSetDao.deleteOrderSet(set)
+    }
+
+    suspend fun getOrderSetDrafts(setId: Long): List<MedicationGroupDraft> {
+        return orderSetDao.getItemsOnce(setId).map { item ->
+            MedicationGroupDraft(
+                diluent = item.diluent,
+                diluentVolume = item.diluentVolume,
+                orderType = item.orderType,
+                usage = item.usage,
+                meds = jsonToMeds(item.medsJson)
+            )
+        }
+    }
+
+    /** 复制该患者最近一次（非当前）治疗记录中的在用医嘱 */
+    suspend fun getPreviousTreatmentDrafts(patientId: Long): List<MedicationGroupDraft> {
+        val treatments = treatmentDao.getByPatient(patientId).first()
+        if (treatments.size < 2) return emptyList()
+        val prev = treatments[1]
+        val groups = infusionGroupDao.getByTreatment(prev.id).first().filter { !it.stopped }
+        val meds = medicationDao.getByTreatment(prev.id).first()
+        return groups.map { g ->
+            val gm = meds.filter { it.groupId == g.id }.map { OrderSetMedEntry(it.name, it.dose, it.doseUnit) }
+            MedicationGroupDraft(g.diluent, g.diluentVolume, g.orderType, g.usage, gm)
+        }
+    }
+
+    private fun medsToJson(meds: List<OrderSetMedEntry>): String {
+        val arr = org.json.JSONArray()
+        meds.forEach { m ->
+            arr.put(org.json.JSONObject().put("name", m.name).put("dose", m.dose).put("doseUnit", m.doseUnit))
+        }
+        return arr.toString()
+    }
+
+    private fun jsonToMeds(json: String): List<OrderSetMedEntry> {
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                OrderSetMedEntry(o.optString("name"), o.optString("dose"), o.optString("doseUnit"))
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
 }

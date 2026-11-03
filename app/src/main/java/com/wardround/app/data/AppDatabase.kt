@@ -19,9 +19,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DrainageRecord::class,
         TreatmentTemplate::class,
         TemplateMedication::class,
-        InfusionGroup::class
+        InfusionGroup::class,
+        Drug::class,
+        OrderSet::class,
+        OrderSetItem::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -36,6 +39,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun treatmentTemplateDao(): TreatmentTemplateDao
     abstract fun templateMedicationDao(): TemplateMedicationDao
     abstract fun infusionGroupDao(): InfusionGroupDao
+    abstract fun drugDao(): DrugDao
+    abstract fun orderSetDao(): OrderSetDao
 
     companion object {
         @Volatile
@@ -175,13 +180,48 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS drugs (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, " +
+                        "initials TEXT NOT NULL, " +
+                        "defaultDose TEXT NOT NULL, " +
+                        "defaultUnit TEXT NOT NULL, " +
+                        "defaultUsage TEXT NOT NULL, " +
+                        "useCount INTEGER NOT NULL, " +
+                        "createdAt INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_drugs_name ON drugs(name)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS order_sets (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, " +
+                        "createdAt INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS order_set_items (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "setId INTEGER NOT NULL, " +
+                        "diluent TEXT NOT NULL, " +
+                        "diluentVolume INTEGER NOT NULL, " +
+                        "orderType TEXT NOT NULL, " +
+                        "usage TEXT NOT NULL, " +
+                        "medsJson TEXT NOT NULL, " +
+                        "FOREIGN KEY(setId) REFERENCES order_sets(id) ON UPDATE NO ACTION ON DELETE CASCADE)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_order_set_items_setId ON order_set_items(setId)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "ward_round.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build().also { INSTANCE = it }
             }
         }
     }

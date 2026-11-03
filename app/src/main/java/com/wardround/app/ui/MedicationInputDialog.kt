@@ -1,5 +1,8 @@
 package com.wardround.app.ui
 
+import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -11,8 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,18 +29,24 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.wardround.app.WardRoundApp
+import com.wardround.app.data.Drug
 import com.wardround.app.data.InfusionGroup
 import com.wardround.app.data.Medication
+import kotlinx.coroutines.launch
 
 internal val doseUnits = listOf("g", "mg", "μg", "ml", "U", "片", "支", "袋", "瓶")
 internal val diluents = listOf("生理盐水", "5%葡萄糖", "10%葡萄糖", "葡萄糖氯化钠", "复方氯化钠", "灭菌注射用水")
@@ -60,21 +70,30 @@ fun MedicationInputDialog(
     title: String,
     existingGroups: List<InfusionGroup>,
     initial: MedDraft? = null,
+    forceNewGroup: Boolean = false,
     onDismiss: () -> Unit,
     onSave: (groupId: Long?, diluent: String, diluentVolume: Int, orderType: String, usage: String, meds: List<MedEntry>) -> Unit
 ) {
-    var groupMode by remember { mutableStateOf(if (initial?.groupId != null) "existing" else "new") }
+    val context = LocalContext.current
+    val repository = remember { (context.applicationContext as WardRoundApp).repository }
+    val scope = rememberCoroutineScope()
+    val drugs by repository.getDrugs().collectAsState(initial = emptyList())
+    val prefs = remember { context.getSharedPreferences("med_input_prefs", Context.MODE_PRIVATE) }
+
+    val isEdit = initial != null
+
+    var groupMode by remember { mutableStateOf(if (forceNewGroup || initial?.groupId == null) "new" else "existing") }
     var selectedGroup by remember { mutableStateOf(existingGroups.firstOrNull { it.id == initial?.groupId }) }
-    var diluent by remember { mutableStateOf(initial?.diluent ?: diluents.first()) }
-    var volumeText by remember { mutableStateOf(initial?.diluentVolume?.takeIf { it > 0 }?.toString() ?: "") }
-    var selectedVolume by remember { mutableStateOf<Int?>(initial?.diluentVolume?.takeIf { it in volumes }) }
-    var orderType by remember { mutableStateOf(initial?.orderType ?: Medication.ORDER_LONG_TERM) }
-    var usage by remember { mutableStateOf(initial?.usage ?: usages.first()) }
+    var diluent by remember { mutableStateOf(initial?.diluent ?: (prefs.getString("last_diluent", diluents.first()) ?: diluents.first())) }
+    var volumeText by remember { mutableStateOf(initial?.diluentVolume?.takeIf { it > 0 }?.toString() ?: prefs.getInt("last_volume", 0).takeIf { it > 0 }?.toString() ?: "") }
+    var selectedVolume by remember { mutableStateOf<Int?>(initial?.diluentVolume?.takeIf { it in volumes } ?: prefs.getInt("last_volume", 0).takeIf { it in volumes }) }
+    var orderType by remember { mutableStateOf(initial?.orderType ?: (prefs.getString("last_order_type", Medication.ORDER_LONG_TERM) ?: Medication.ORDER_LONG_TERM)) }
+    var usage by remember { mutableStateOf(initial?.usage ?: (prefs.getString("last_usage", usages.first()) ?: usages.first())) }
 
     val meds = remember { mutableStateListOf<MedEntry>().apply { initial?.meds?.let { addAll(it) } } }
     var curName by remember { mutableStateOf("") }
-    var curDose by remember { mutableStateOf("") }
-    var curUnit by remember { mutableStateOf("g") }
+    var curDose by remember { mutableStateOf(prefs.getString("last_dose", "") ?: "") }
+    var curUnit by remember { mutableStateOf(prefs.getString("last_unit", "g") ?: "g") }
 
     var diluentExpanded by remember { mutableStateOf(false) }
     var usageExpanded by remember { mutableStateOf(false) }
@@ -84,14 +103,57 @@ fun MedicationInputDialog(
     val isTemp = orderType == Medication.ORDER_TEMP
     val isNewGroup = groupMode == "new"
 
+    val suggestions = remember(curName, drugs) {
+        if (curName.isBlank()) emptyList()
+        else {
+            val q = curName.trim().lowercase()
+            drugs.filter { d ->
+                d.name.contains(curName.trim()) || d.initials.lowercase().contains(q)
+            }.sortedByDescending { it.useCount }.take(6)
+        }
+    }
+
+    val commonDrugs = remember(drugs) { drugs.sortedByDescending { it.useCount }.take(10) }
+
+    fun addMed(m: MedEntry) {
+        meds.add(m)
+        val d = drugs.firstOrNull { it.name == m.name }
+        if (d != null) scope.launch { repository.incrementDrugUse(d.id) }
+    }
+
+    fun fillFromDrug(d: Drug) {
+        curName = d.name
+        if (d.defaultDose.isNotBlank()) curDose = d.defaultDose
+        if (d.defaultUnit.isNotBlank()) curUnit = d.defaultUnit
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                // 药物录入
                 Text("药物（可添加多味）", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
                 Spacer(Modifier.height(4.dp))
+
+                if (commonDrugs.isNotEmpty()) {
+                    Text("常用药（点选直接加入）", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Spacer(Modifier.height(4.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        commonDrugs.forEach { d ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    addMed(MedEntry(d.name, d.defaultDose, d.defaultUnit))
+                                    curName = ""
+                                    curDose = ""
+                                },
+                                label = { Text(d.name) }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = curName,
@@ -125,11 +187,33 @@ fun MedicationInputDialog(
                         }
                     }
                 }
+
+                if (suggestions.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Column(
+                        modifier = Modifier.fillMaxWidth().background(Color(0xFFF2F2F7), RoundedCornerShape(8.dp))
+                    ) {
+                        suggestions.forEach { d ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { fillFromDrug(d) }.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(d.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Text(
+                                    if (d.defaultDose.isNotBlank()) "${d.defaultDose}${d.defaultUnit}" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(onClick = {
                         if (curName.isNotBlank()) {
-                            meds.add(MedEntry(curName, curDose, curUnit))
+                            addMed(MedEntry(curName, curDose, curUnit))
                             curName = ""
                             curDose = ""
                         }
@@ -152,15 +236,16 @@ fun MedicationInputDialog(
                 }
 
                 Spacer(Modifier.height(12.dp))
-                HorizontalDivider2()
+                androidx.compose.material3.HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
 
-                // 溶媒组选择
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = isNewGroup, onClick = { groupMode = "new" }, label = { Text("新开溶媒组") })
-                    FilterChip(selected = !isNewGroup, onClick = { groupMode = "existing" }, label = { Text("加入已有组") })
+                if (!forceNewGroup) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = isNewGroup, onClick = { groupMode = "new" }, label = { Text("新开溶媒组") })
+                        FilterChip(selected = !isNewGroup, onClick = { groupMode = "existing" }, label = { Text("加入已有组") })
+                    }
+                    Spacer(Modifier.height(8.dp))
                 }
-                Spacer(Modifier.height(8.dp))
 
                 if (isNewGroup) {
                     ExposedDropdownMenuBox(expanded = diluentExpanded, onExpandedChange = { diluentExpanded = it }) {
@@ -250,6 +335,16 @@ fun MedicationInputDialog(
                     val finalDiluent = if (isNewGroup) diluent else selectedGroup?.diluent ?: ""
                     val finalVolume = if (isNewGroup) (volumeText.toIntOrNull() ?: 0) else (selectedGroup?.diluentVolume ?: 0)
                     val finalUsage = if (isTemp) "st" else usage
+
+                    prefs.edit()
+                        .putString("last_unit", curUnit)
+                        .putString("last_dose", curDose)
+                        .putString("last_diluent", finalDiluent)
+                        .putInt("last_volume", finalVolume)
+                        .putString("last_usage", finalUsage)
+                        .putString("last_order_type", orderType)
+                        .apply()
+
                     onSave(finalGroupId, finalDiluent, finalVolume, orderType, finalUsage, meds.toList())
                 },
                 enabled = meds.isNotEmpty() && (isNewGroup || selectedGroup != null)
@@ -259,9 +354,4 @@ fun MedicationInputDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
-}
-
-@Composable
-private fun HorizontalDivider2() {
-    androidx.compose.material3.HorizontalDivider()
 }

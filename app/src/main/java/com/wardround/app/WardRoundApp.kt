@@ -14,6 +14,7 @@ class WardRoundApp : Application() {
     override fun onCreate() {
         super.onCreate()
         appScope.launch {
+            repository.seedDrugsIfEmpty()
             repository.cleanupExpiredPatients()
         }
     }
@@ -30,7 +31,9 @@ class WardRoundApp : Application() {
             drainageDao = database.drainageDao(),
             treatmentTemplateDao = database.treatmentTemplateDao(),
             templateMedicationDao = database.templateMedicationDao(),
-            infusionGroupDao = database.infusionGroupDao()
+            infusionGroupDao = database.infusionGroupDao(),
+            drugDao = database.drugDao(),
+            orderSetDao = database.orderSetDao()
         )
     }
 }

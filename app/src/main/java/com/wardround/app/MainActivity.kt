@@ -20,6 +20,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.wardround.app.ui.HistoryScreen
 import com.wardround.app.ui.HomeScreen
+import com.wardround.app.ui.OrderSetScreen
 import com.wardround.app.ui.PatientDetailScreen
 import com.wardround.app.ui.PatientEditScreen
 import com.wardround.app.ui.DeletedPatientScreen
@@ -101,6 +102,7 @@ fun WardRoundNavHost() {
                 onBack = { navController.popBackStack() },
                 onOpenHistory = { navController.navigate("history") },
                 onOpenTemplates = { navController.navigate("templates") },
+                onOpenOrderSets = { navController.navigate("order_sets") },
                 onOpenDeletedPatients = { navController.navigate("deleted_patients") }
             )
         }
@@ -111,6 +113,11 @@ fun WardRoundNavHost() {
         }
         composable("templates") {
             TemplateScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("order_sets") {
+            OrderSetScreen(
                 onBack = { navController.popBackStack() }
             )
         }
