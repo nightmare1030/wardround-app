@@ -13,5 +13,7 @@ data class Drug(
     val defaultUnit: String = "g",
     val defaultUsage: String = "qd",
     val useCount: Int = 0,
+    val isAntibiotic: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 )
+

@@ -58,6 +58,7 @@ fun TemplateScreen(onBack: () -> Unit) {
     val repository = remember { (context.applicationContext as WardRoundApp).repository }
     val scope = rememberCoroutineScope()
     val templates by repository.getTreatmentTemplates().collectAsState(initial = emptyList())
+    val allMeds by repository.getAllTemplateMedications().collectAsState(initial = emptyList())
 
     var showEdit by remember { mutableStateOf(false) }
     var editTemplate by remember { mutableStateOf<TreatmentTemplate?>(null) }
@@ -99,6 +100,7 @@ fun TemplateScreen(onBack: () -> Unit) {
                 items(templates, key = { it.id }) { t ->
                     TemplateCard(
                         template = t,
+                        hasMeds = allMeds.any { it.templateId == t.id },
                         onClick = { editTemplate = t; showEdit = true },
                         onDelete = { pendingDelete = t }
                     )
@@ -142,6 +144,7 @@ fun TemplateScreen(onBack: () -> Unit) {
 @Composable
 private fun TemplateCard(
     template: TreatmentTemplate,
+    hasMeds: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -153,7 +156,7 @@ private fun TemplateCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(template.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(2.dp))
-                Text("点击编辑用药方案", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                Text(if (hasMeds) "点击编辑用药方案" else "无用药明细，点击补录", style = MaterialTheme.typography.labelSmall, color = if (hasMeds) Color.Gray else Color(0xFFEF6C00))
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, contentDescription = "删除", tint = Color.Red)

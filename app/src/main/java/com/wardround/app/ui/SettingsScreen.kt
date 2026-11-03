@@ -59,6 +59,7 @@ fun SettingsScreen(
     onOpenHistory: () -> Unit,
     onOpenTemplates: () -> Unit,
     onOpenOrderSets: () -> Unit,
+    onOpenDrugs: () -> Unit,
     onOpenDeletedPatients: () -> Unit
 ) {
     val context = LocalContext.current
@@ -189,6 +190,20 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = onOpenOrderSets) { Text("管理") }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "常用药管理",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onOpenDrugs) { Text("管理") }
                 }
             }
 

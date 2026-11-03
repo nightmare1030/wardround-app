@@ -45,12 +45,14 @@ fun StatisticsSection(patient: Patient?) {
     val treatments by repository.getTreatments(patient.id).collectAsState(initial = emptyList())
     val groups by repository.getInfusionGroupsByPatient(patient.id).collectAsState(initial = emptyList())
     val meds by repository.getMedicationsByPatient(patient.id).collectAsState(initial = emptyList())
+    val drugs by repository.getDrugs().collectAsState(initial = emptyList())
 
     val surgeryDurationMinutes = if (patient.surgeryStartTime != null && patient.surgeryEndTime != null) {
         ((patient.surgeryEndTime - patient.surgeryStartTime) / 60000).toInt()
     } else null
 
-    val antibioticUsage = meds.filter { repository.isAntibiotic(it.name) }
+    val customAntibiotics = drugs.filter { it.isAntibiotic }.map { it.name }.toSet()
+    val antibioticUsage = meds.filter { repository.isAntibiotic(it.name) || it.name in customAntibiotics }
         .groupBy { it.name }
         .map { (name, ms) ->
             val gids = ms.mapNotNull { it.groupId }.toSet()

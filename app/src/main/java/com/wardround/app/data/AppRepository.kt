@@ -20,7 +20,8 @@ class AppRepository(
     private val templateMedicationDao: TemplateMedicationDao,
     private val infusionGroupDao: InfusionGroupDao,
     private val drugDao: DrugDao,
-    private val orderSetDao: OrderSetDao
+    private val orderSetDao: OrderSetDao,
+    private val customDiagnosisDao: CustomDiagnosisDao
 ) {
     // ===== 患者 =====
     fun getAllPatients(): Flow<List<Patient>> = patientDao.getAll()
@@ -618,19 +619,6 @@ class AppRepository(
         }
     }
 
-    /** 复制该患者最近一次（非当前）治疗记录中的在用医嘱 */
-    suspend fun getPreviousTreatmentDrafts(patientId: Long): List<MedicationGroupDraft> {
-        val treatments = treatmentDao.getByPatient(patientId).first()
-        if (treatments.size < 2) return emptyList()
-        val prev = treatments[1]
-        val groups = infusionGroupDao.getByTreatment(prev.id).first().filter { !it.stopped }
-        val meds = medicationDao.getByTreatment(prev.id).first()
-        return groups.map { g ->
-            val gm = meds.filter { it.groupId == g.id }.map { OrderSetMedEntry(it.name, it.dose, it.doseUnit) }
-            MedicationGroupDraft(g.diluent, g.diluentVolume, g.orderType, g.usage, gm)
-        }
-    }
-
     private fun medsToJson(meds: List<OrderSetMedEntry>): String {
         val arr = org.json.JSONArray()
         meds.forEach { m ->
@@ -650,5 +638,25 @@ class AppRepository(
             emptyList()
         }
     }
+    // ===== 常用药管理 =====
+    suspend fun saveDrug(drug: Drug): Long =
+        if (drug.id == 0L) drugDao.insert(drug) else { drugDao.update(drug); drug.id }
+
+    suspend fun deleteDrug(drug: Drug) {
+        drugDao.delete(drug)
+    }
+
+    // ===== 自定义诊断 =====
+    fun getCustomDiagnoses(): Flow<List<CustomDiagnosis>> = customDiagnosisDao.getAll()
+
+    suspend fun addCustomDiagnosis(name: String): Long =
+        customDiagnosisDao.insert(CustomDiagnosis(name = name))
+
+    suspend fun deleteCustomDiagnosis(d: CustomDiagnosis) {
+        customDiagnosisDao.delete(d)
+    }
+
+    // ===== 模板用药（判断模板是否有明细） =====
+    fun getAllTemplateMedications(): Flow<List<TemplateMedication>> = templateMedicationDao.getAll()
 
 }

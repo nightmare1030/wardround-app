@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,9 +26,11 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,9 +57,11 @@ import com.wardround.app.WardRoundApp
 import com.wardround.app.data.DrainageRecord
 import com.wardround.app.data.InfusionGroup
 import com.wardround.app.data.Medication
+import com.wardround.app.data.MedicationGroupDraft
 import com.wardround.app.data.Patient
 import com.wardround.app.data.Treatment
 import com.wardround.app.data.OrderSet
+import com.wardround.app.data.OrderSetMedEntry
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -112,18 +117,18 @@ fun TreatmentSection(patientId: Long, showDrainage: Boolean = true) {
     val yesterdayRecord = drainages.firstOrNull { it.recordDate == yesterdayStart }
 
     val allGroupsByPatient by repository.getInfusionGroupsByPatient(patientId).collectAsState(initial = emptyList())
-    val volumeHistory = allGroupsByPatient.groupBy { it.treatmentId }
-        .map { (_, gs) ->
+    val volumeHistory = allGroupsByPatient.groupBy { startOfDay(it.createdAt) }
+        .map { (dayStart, gs) ->
             val lv = gs.filter { !it.stopped && it.orderType == Medication.ORDER_LONG_TERM }.sumOf { (it.diluentVolume * usageMultiplier(it.usage)).roundToInt() }
             val tv = gs.filter { !it.stopped && it.orderType == Medication.ORDER_TEMP }.sumOf { (it.diluentVolume * usageMultiplier(it.usage)).roundToInt() }
-            val date = gs.firstOrNull()?.createdAt ?: 0L
-            Triple(date, lv, tv)
+            Triple(dayStart, lv, tv)
         }.sortedByDescending { it.first }.take(7)
 
     var showEditTreatment by remember { mutableStateOf(false) }
     var showAddMedication by remember { mutableStateOf(false) }
     var showTemplatePicker by remember { mutableStateOf(false) }
     var showOrderSetPicker by remember { mutableStateOf(false) }
+    var showCopyOrders by remember { mutableStateOf(false) }
     var pendingDeleteTreatment by remember { mutableStateOf<Treatment?>(null) }
     var pendingDeleteMedication by remember { mutableStateOf<Medication?>(null) }
     var pendingStopGroup by remember { mutableStateOf<InfusionGroup?>(null) }
@@ -242,18 +247,7 @@ fun TreatmentSection(patientId: Long, showDrainage: Boolean = true) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { showTemplatePicker = true }) { Text("调用模板") }
                         TextButton(onClick = { showOrderSetPicker = true }) { Text("套用套餐") }
-                        TextButton(onClick = {
-                            scope.launch {
-                                val drafts = repository.getPreviousTreatmentDrafts(patientId)
-                                if (drafts.isEmpty()) {
-                                    Toast.makeText(context, "没有可复制的历史医嘱", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    drafts.forEach { d ->
-                                        pendingMeds.add(MedDraft(null, d.diluent, d.diluentVolume, d.orderType, d.usage, d.meds.map { MedEntry(it.name, it.dose, it.doseUnit) }))
-                                    }
-                                }
-                            }
-                        }) { Text("复制医嘱") }
+                        TextButton(onClick = { showCopyOrders = true }) { Text("复制医嘱") }
                     }
                 }
 
@@ -357,8 +351,13 @@ fun TreatmentSection(patientId: Long, showDrainage: Boolean = true) {
             onDismiss = { showTemplatePicker = false },
             onPick = { templateId ->
                 scope.launch {
-                    repository.getTemplateDrafts(templateId).forEach { d ->
-                        pendingMeds.add(MedDraft(null, d.diluent, d.diluentVolume, d.orderType, d.usage, d.meds.map { MedEntry(it.name, it.dose, it.doseUnit) }))
+                    val drafts = repository.getTemplateDrafts(templateId)
+                    if (drafts.isEmpty()) {
+                        Toast.makeText(context, "该模板没有用药明细，请到设置「医嘱模板」中编辑补充", Toast.LENGTH_SHORT).show()
+                    } else {
+                        drafts.forEach { d ->
+                            pendingMeds.add(MedDraft(null, d.diluent, d.diluentVolume, d.orderType, d.usage, d.meds.map { MedEntry(it.name, it.dose, it.doseUnit) }))
+                        }
                     }
                 }
                 showTemplatePicker = false
@@ -376,6 +375,19 @@ fun TreatmentSection(patientId: Long, showDrainage: Boolean = true) {
                     }
                 }
                 showOrderSetPicker = false
+            }
+        )
+    }
+
+    if (showCopyOrders && currentTreatment != null) {
+        CopyOrdersDialog(
+            patientId = patientId,
+            onDismiss = { showCopyOrders = false },
+            onConfirm = { drafts ->
+                drafts.forEach { d ->
+                    pendingMeds.add(MedDraft(null, d.diluent, d.diluentVolume, d.orderType, d.usage, d.meds.map { MedEntry(it.name, it.dose, it.doseUnit) }))
+                }
+                showCopyOrders = false
             }
         )
     }
@@ -627,6 +639,85 @@ private fun OrderSetPickerDialog(
             }
         },
         confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+@Composable
+private fun CopyOrdersDialog(
+    patientId: Long,
+    onDismiss: () -> Unit,
+    onConfirm: (List<MedicationGroupDraft>) -> Unit
+) {
+    val context = LocalContext.current
+    val repository = remember { (context.applicationContext as WardRoundApp).repository }
+    val groups by repository.getInfusionGroupsByPatient(patientId).collectAsState(initial = emptyList())
+    val meds by repository.getMedicationsByPatient(patientId).collectAsState(initial = emptyList())
+    val ordered = groups.sortedByDescending { it.createdAt }
+    val selectedIds = remember { mutableStateListOf<Long>() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("复制医嘱") },
+        text = {
+            if (ordered.isEmpty()) {
+                Text("该患者暂无医嘱", color = Color.Gray)
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                    items(ordered, key = { it.id }) { g ->
+                        val gm = meds.filter { it.groupId == g.id }
+                        val checked = g.id in selectedIds
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (checked) selectedIds.remove(g.id) else selectedIds.add(g.id)
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = { if (it) selectedIds.add(g.id) else selectedIds.remove(g.id) }
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    gm.joinToString(" + ") { "${it.name}${if (it.dose.isNotBlank()) " ${it.dose}${it.doseUnit}" else ""}" },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                val typeText = if (g.orderType == Medication.ORDER_TEMP) "临时" else if (g.usage.isNotBlank()) g.usage else "长期"
+                                val statusText = if (g.stopped) "已停止" else "在用"
+                                Text(
+                                    "${g.diluent} ${g.diluentVolume}ml · $typeText · $statusText · ${treatmentTimeFormat.format(Date(g.createdAt))}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (g.stopped) Color.Gray else Color(0xFF1565C0)
+                                )
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selectedIds.isNotEmpty(),
+                onClick = {
+                    val drafts = ordered.filter { it.id in selectedIds }.map { g ->
+                        MedicationGroupDraft(
+                            diluent = g.diluent,
+                            diluentVolume = g.diluentVolume,
+                            orderType = g.orderType,
+                            usage = g.usage,
+                            meds = meds.filter { it.groupId == g.id }.map { OrderSetMedEntry(it.name, it.dose, it.doseUnit) }
+                        )
+                    }
+                    onConfirm(drafts)
+                }
+            ) { Text("加入待审核") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
 }

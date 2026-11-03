@@ -33,7 +33,8 @@ class WardRoundApp : Application() {
             templateMedicationDao = database.templateMedicationDao(),
             infusionGroupDao = database.infusionGroupDao(),
             drugDao = database.drugDao(),
-            orderSetDao = database.orderSetDao()
+            orderSetDao = database.orderSetDao(),
+            customDiagnosisDao = database.customDiagnosisDao()
         )
     }
 }
